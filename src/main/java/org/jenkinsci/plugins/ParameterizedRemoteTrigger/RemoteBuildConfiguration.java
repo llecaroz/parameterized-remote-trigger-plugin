@@ -133,6 +133,7 @@ public class RemoteBuildConfiguration extends Builder implements SimpleBuildStep
 	private boolean useJobInfoCache;
 	private boolean abortTriggeredJob;
 	private boolean disabled;
+	private boolean verbose;
 
 	private transient Map<String, Semaphore> hostLocks = new HashMap<>();
 	private Map<String, Integer> hostPermits = new HashMap<>();
@@ -303,6 +304,11 @@ public class RemoteBuildConfiguration extends Builder implements SimpleBuildStep
 	@DataBoundSetter
 	public void setUseCrumbCache(boolean useCrumbCache) {
 		this.useCrumbCache = useCrumbCache;
+	}
+
+	@DataBoundSetter
+	public void setVerbose(boolean verbose) {
+		this.verbose = verbose;		
 	}
 
 	public List<String> getParameterList(BuildContext context) {
@@ -696,7 +702,7 @@ public class RemoteBuildConfiguration extends Builder implements SimpleBuildStep
 		try {
 			ConnectionResponse responseRemoteJob = HttpHelper.tryPost(triggerUrlString, context, cleanedParams,
 					this.getHttpPostReadTimeout(), this.getPollInterval(buildInfo.getStatus()),
-					this.getConnectionRetryLimit(), this.getAuth2(), getLock(triggerUrlString), isUseCrumbCache());
+					this.getConnectionRetryLimit(), this.getAuth2(), getLock(triggerUrlString), isUseCrumbCache(), isVerbose());
 			QueueItem queueItem = new QueueItem(responseRemoteJob.getHeader());
 			buildInfo.setQueueId(queueItem.getId());
 			buildInfo = updateBuildInfo(buildInfo, context);
@@ -954,7 +960,7 @@ public class RemoteBuildConfiguration extends Builder implements SimpleBuildStep
 			throws IOException, InterruptedException {
 		return HttpHelper.tryGet(urlString, context, this.getHttpGetReadTimeout(),
 				this.getPollInterval(remoteBuildStatus), this.getConnectionRetryLimit(), this.getAuth2(),
-				getLock(urlString));
+				getLock(urlString), isVerbose());
 	}
 
 	private void logAuthInformation(BuildContext context) throws IOException {
@@ -1131,6 +1137,10 @@ public class RemoteBuildConfiguration extends Builder implements SimpleBuildStep
 		return disabled;
 	}
 
+	public boolean isVerbose() {
+		return verbose;
+	}
+	
 	private @Nonnull JSONObject getRemoteJobMetadata(String jobNameOrUrl, BuildContext context)
 			throws IOException, InterruptedException {
 

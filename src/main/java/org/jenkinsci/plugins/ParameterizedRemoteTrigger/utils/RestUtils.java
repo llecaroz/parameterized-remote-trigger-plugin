@@ -26,7 +26,7 @@ public class RestUtils {
 		try {
 			resp = HttpHelper.tryPost(cancelQueueUrl, context, null, remoteConfig.getHttpPostReadTimeout(),
 					remoteConfig.getPollInterval(RemoteBuildStatus.QUEUED) * 2, 0,
-					remoteConfig.getAuth2(), remoteConfig.getLock(cancelQueueUrl), remoteConfig.isUseCrumbCache());
+					remoteConfig.getAuth2(), remoteConfig.getLock(cancelQueueUrl), remoteConfig.isUseCrumbCache(), remoteConfig.isVerbose());
 		} catch (ExceedRetryLimitException e) {
 			// Due to https://issues.jenkins-ci.org/browse/JENKINS-21311, we can't tell
 			// whether the action was succeed,
@@ -44,7 +44,7 @@ public class RestUtils {
 		String stopJobUrl = String.format("%sstop", buildInfo.getBuildURL());
 		ConnectionResponse resp = HttpHelper.tryPost(stopJobUrl, context, null, remoteConfig.getHttpPostReadTimeout(),
 				remoteConfig.getPollInterval(buildInfo.getStatus()), remoteConfig.getConnectionRetryLimit(),
-				remoteConfig.getAuth2(), remoteConfig.getLock(stopJobUrl), remoteConfig.isUseCrumbCache());
+				remoteConfig.getAuth2(), remoteConfig.getLock(stopJobUrl), remoteConfig.isUseCrumbCache(), remoteConfig.isVerbose());
 		context.logger.println(String.format("Remote Job:%s was aborted!", buildInfo.getBuildURL()));
 		return resp;
 	}

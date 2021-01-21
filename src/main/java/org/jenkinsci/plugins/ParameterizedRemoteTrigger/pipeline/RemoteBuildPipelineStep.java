@@ -72,6 +72,7 @@ public class RemoteBuildPipelineStep extends Step {
 		remoteBuildConfig.setShouldNotFailBuild(false); // We need to get notified. Failure feedback is collected async
 														// then.
 		remoteBuildConfig.setBlockBuildUntilComplete(true); // default for Pipeline Step
+		remoteBuildConfig.setVerbose(false);
 	}
 
 	@DataBoundSetter
@@ -179,6 +180,11 @@ public class RemoteBuildPipelineStep extends Step {
 		remoteBuildConfig.setDisabled(disabled);
 	}
 
+	@DataBoundSetter
+	public void setVerbose(boolean verbose) {
+		remoteBuildConfig.setVerbose(verbose);
+	}
+	
 	@Override
 	public StepExecution start(StepContext context) throws Exception {
 		return new Execution(context, remoteBuildConfig);
@@ -387,5 +393,8 @@ public class RemoteBuildPipelineStep extends Step {
 		return remoteBuildConfig.isDisabled();
 	}
 
+	public boolean isVerbose() {
+		return remoteBuildConfig.isVerbose();
+	}
 
 }

@@ -41,6 +41,11 @@ If authentication is required:
 def handle = triggerRemoteJob job: 'https://myjenkins:8080/job/JobWithoutParams', auth: TokenAuth(apiToken: '<theApiToken>', userName: '<userName>')
 ```
 
+To troubleshoot issues, a verbose mode can be enabled with the verbose parameter. This will give extra traces on HTTP requests in the job console:
+```
+def handle = triggerRemoteJob job: 'https://myjenkins:8080/job/JobWithoutParams', auth: TokenAuth(apiToken: '<theApiToken>', userName: '<userName>', verbose: true)
+```
+
 
 The pipeline will wait/block until the remote build finished.
 

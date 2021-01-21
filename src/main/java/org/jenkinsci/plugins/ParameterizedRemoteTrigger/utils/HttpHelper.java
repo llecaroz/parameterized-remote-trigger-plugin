@@ -411,6 +411,25 @@ public class HttpHelper {
 
 		return triggerUrlString;
 	}
+	
+	/**
+	 * This method is a facilitator to log some messages originally going in the Jenkins log file
+	 * (catalina.log, ...), also into the Jenkins job console specified in the context.logger to 
+	 * enable a better troubleshooting when the verbose parameter is set
+	 * 
+	 * @param context
+	 *            the context of this Builder/BuildStep.
+	 * @param level
+	 *            the java.util.logging.Level Logging level to put on the Jenkins Log, null will put nothing
+	 * @param message
+	 *            the message string to put in the Jenkins log or in the job console
+	 * @param isVerbose
+	 *            if false message are only pushed in the Jenkins log otherwise to both Jenkins+Job console Logs
+	 */
+	private static void verboseMessageLog(BuildContext context, Level level, String message, boolean isVerbose) {
+		if(level!=null) logger.log(level, message);
+		if(isVerbose && context!=null && context.logger!=null) context.logger.println(message); 
+	}	
 
 	/**
 	 * Same as sendHTTPCall, but keeps track of the number of failed connection
@@ -447,7 +466,7 @@ public class HttpHelper {
 	 */
 	private static ConnectionResponse sendHTTPCall(String urlString, String requestType, BuildContext context,
 			Collection<String> postParams, int readTimeout, int numberOfAttempts, int pollInterval, int retryLimit,
-			Auth2 overrideAuth, StringBuilder rawRespRef, boolean isCrubmCacheEnabled)
+			Auth2 overrideAuth, StringBuilder rawRespRef, boolean isCrubmCacheEnabled, boolean isVerbose)
 			throws IOException, InterruptedException {
 
 		JSONObject responseObject = null;
@@ -465,11 +484,14 @@ public class HttpHelper {
 		HttpURLConnection conn = (HttpURLConnection) getAuthorizedConnection(context, url, overrideAuth);
 
 		try {
+			final SimpleDateFormat sdf = new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'");
+
 			conn.setDoInput(true);
 			conn.setRequestProperty("Accept", "application/json");
 			conn.setRequestProperty("Accept-Language", "UTF-8");
 			conn.setRequestMethod(requestType);
 			conn.setReadTimeout(readTimeout);
+			HttpHelper.verboseMessageLog(context, Level.FINER, String.format("%s adding crumb: %s", urlString, sdf.format(new Date())), isVerbose);
 			addCrumbToConnection(conn, context, overrideAuth, isCrubmCacheEnabled);
 			// wait up to 5 seconds for the connection to be open
 			conn.setConnectTimeout(5000);
@@ -480,14 +502,11 @@ public class HttpHelper {
 				conn.getOutputStream().write(postDataBytes);
 			}
 
-			SimpleDateFormat sdf = new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'");
-
-			logger.finer(String.format("%s begin: %s", urlString, sdf.format(new Date())));
+			HttpHelper.verboseMessageLog(context, Level.FINER, String.format("%s begin: %s", urlString, sdf.format(new Date())), isVerbose);
 			Instant before = Instant.now();
 			conn.connect();
 			Instant after = Instant.now();
-			logger.finer(
-					String.format("%s end: elapsed [%s] ms", urlString, Duration.between(before, after).toMillis()));
+			HttpHelper.verboseMessageLog(context, Level.FINER, String.format("%s end: elapsed [%s] ms", urlString, Duration.between(before, after).toMillis()), isVerbose);
 			responseHeader = conn.getHeaderFields();
 			if (HTTP_POST.equalsIgnoreCase(requestType)) {
 				// if connection to the server succeeded we should not perform any further retries
@@ -498,6 +517,7 @@ public class HttpHelper {
 			}
 			responseCode = conn.getResponseCode();
 
+			HttpHelper.verboseMessageLog(context, Level.FINER, String.format("%s response code: [%s]", urlString, responseCode), isVerbose);
 			if (responseCode == 401) {
 				throw new UnauthorizedException(url);
 			} else if (responseCode == 403) {
@@ -546,11 +566,13 @@ public class HttpHelper {
 
 			// Shouldn't expose the token in console
 			logger.log(Level.WARNING, e.getMessage() + hintsString, e);
+			HttpHelper.verboseMessageLog(context, null, e.getMessage() + hintsString, isVerbose);
+			
 			// If we have connectionRetryLimit set to > 0 then retry that many times.
-			if (numberOfAttempts <= retryLimit) {
+			if (numberOfAttempts <= retryLimit) {				
 				context.logger.println(String.format(
 						"Connection to remote server failed %s, waiting to retry - %s seconds until next attempt. URL: %s, parameters: %s",
-						(responseCode == 0 ? "" : "[" + responseCode + "]"), pollInterval,
+						"[" + (responseCode == 0 ? e.getMessage() : responseCode) + "]", pollInterval,
 						getUrlWithoutParameters(urlString), parmsString));
 
 				// Sleep for 'pollInterval' seconds.
@@ -562,9 +584,14 @@ public class HttpHelper {
 				context.logger.println("Retry attempt #" + numberOfAttempts + " out of " + retryLimit);
 				numberOfAttempts++;
 				return sendHTTPCall(urlString, requestType, context, postParams, readTimeout,
-						numberOfAttempts, pollInterval, retryLimit, overrideAuth, rawRespRef, isCrubmCacheEnabled);
+						numberOfAttempts, pollInterval, retryLimit, overrideAuth, rawRespRef, isCrubmCacheEnabled, isVerbose);
 
 			} else {
+				context.logger.println(String.format(
+						"Connection to remote server failed %s, Number of retries exceeded. URL: %s, parameters: %s",
+						"[" + (responseCode == 0 ? e.getMessage() : responseCode) + "]",
+						getUrlWithoutParameters(urlString), parmsString));
+
 				// reached the maximum number of retries, time to fail
 				throw new ExceedRetryLimitException();
 			}
@@ -580,11 +607,11 @@ public class HttpHelper {
 
 	private static ConnectionResponse tryCall(String urlString, String method, BuildContext context,
 			Collection<String> params, int readTimeout, int pollInterval, int retryLimit, Auth2 overrideAuth, StringBuilder rawRespRef,
-			Semaphore lock, boolean isCrubmCacheEnabled) throws IOException, InterruptedException {
+			Semaphore lock, boolean isCrubmCacheEnabled, boolean isVerbose) throws IOException, InterruptedException {
 		if (lock == null) {
 			context.logger.println("calling remote without locking...");
 			return sendHTTPCall(urlString, method, context, null, readTimeout,
-					1, pollInterval, retryLimit, overrideAuth, rawRespRef, isCrubmCacheEnabled);
+					1, pollInterval, retryLimit, overrideAuth, rawRespRef, isCrubmCacheEnabled, isVerbose);
 		}
 		Boolean isAcquired = null;
 		try {
@@ -601,7 +628,7 @@ public class HttpHelper {
 			}
 
 			ConnectionResponse cr = sendHTTPCall(urlString, method, context, params, readTimeout,
-					1, pollInterval, retryLimit, overrideAuth, rawRespRef, isCrubmCacheEnabled);
+					1, pollInterval, retryLimit, overrideAuth, rawRespRef, isCrubmCacheEnabled, isVerbose);
 			return cr;
 
 		} finally {
@@ -613,44 +640,44 @@ public class HttpHelper {
 
 	public static ConnectionResponse tryPost(String urlString, BuildContext context, Collection<String> params,
 			int readTimeout, int pollInterval, int retryLimit, Auth2 overrideAuth, Semaphore lock,
-			boolean isCrubmCacheEnabled) throws IOException, InterruptedException {
+			boolean isCrubmCacheEnabled, boolean isVerbose) throws IOException, InterruptedException {
 
 		return tryCall(urlString, HTTP_POST, context, params, readTimeout, pollInterval, retryLimit,
-				overrideAuth, null, lock,isCrubmCacheEnabled);
+				overrideAuth, null, lock, isCrubmCacheEnabled, isVerbose);
 	}
 
 	public static ConnectionResponse tryGet(String urlString, BuildContext context, int readTimeout,
-			int pollInterval, int retryLimit, Auth2 overrideAuth, Semaphore lock)
+			int pollInterval, int retryLimit, Auth2 overrideAuth, Semaphore lock, boolean isVerbose)
 			throws IOException, InterruptedException {
 		return tryCall(urlString, HTTP_GET, context, null, readTimeout, pollInterval, retryLimit,
-				overrideAuth, null, lock, false);
+				overrideAuth, null, lock, false, isVerbose);
 	}
 
 	public static String tryGetRawResp(String urlString, BuildContext context, int readTimeout,
-			int pollInterval, int retryLimit, Auth2 overrideAuth, Semaphore lock)
+			int pollInterval, int retryLimit, Auth2 overrideAuth, Semaphore lock, boolean isVerbose)
 			throws IOException, InterruptedException {
 		StringBuilder resp = new StringBuilder();
 		tryCall(urlString, HTTP_GET, context, null, readTimeout, pollInterval, retryLimit,
-				overrideAuth, resp, lock, false);
+				overrideAuth, resp, lock, false, isVerbose);
 		return resp.toString();
 	}
 
 	public static ConnectionResponse post(String urlString, BuildContext context, Collection<String> params,
-			int readTimeout, int pollInterval, int retryLimit, Auth2 overrideAuth, boolean isCrubmCacheEnabled)
+			int readTimeout, int pollInterval, int retryLimit, Auth2 overrideAuth, boolean isCrubmCacheEnabled, boolean isVerbose)
 			throws IOException, InterruptedException {
 		return tryPost(urlString, context, params, readTimeout, pollInterval, retryLimit, overrideAuth,
-				null, isCrubmCacheEnabled);
+				null, isCrubmCacheEnabled, isVerbose);
 	}
 
 	public static ConnectionResponse get(String urlString, BuildContext context, int readTimeout,
-			int pollInterval, int retryLimit, Auth2 overrideAuth) throws IOException, InterruptedException {
-		return tryGet(urlString, context, readTimeout, pollInterval, retryLimit, overrideAuth, null);
+			int pollInterval, int retryLimit, Auth2 overrideAuth, boolean isVerbose) throws IOException, InterruptedException {
+		return tryGet(urlString, context, readTimeout, pollInterval, retryLimit, overrideAuth, null, isVerbose);
 	}
 
 	public static String getRawResp(String urlString, String requestType, BuildContext context,
 			Collection<String> postParams, int readTimeout, int numberOfAttempts, int pollInterval,
-			int retryLimit, Auth2 overrideAuth) throws IOException, InterruptedException {
-		return tryGetRawResp(urlString, context, readTimeout, pollInterval, retryLimit, overrideAuth, null);
+			int retryLimit, Auth2 overrideAuth, boolean isVerbose) throws IOException, InterruptedException {
+		return tryGetRawResp(urlString, context, readTimeout, pollInterval, retryLimit, overrideAuth, null, isVerbose);
 	}
 
 }
